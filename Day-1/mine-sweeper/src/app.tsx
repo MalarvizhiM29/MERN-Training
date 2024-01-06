@@ -6,21 +6,43 @@ type Cell = {
   isMine: boolean
   mineCount?: number
   isRevealed: boolean
+  isFlagged: boolean
 }
 
-export function App() {
+type MineSweeperProps = {
+  numRows: number
+  numCols: number
+  difficulty: Difficulty
+}
 
+// MineSweeper is a JSX component
+function MineSweeper({ numRows, numCols, difficulty }: MineSweeperProps) {
   const [board, setBoard] = useState<Array<Array<Cell>>>([])
+
+  const [isGameDone, setIsGameDone] = useState<boolean>(false)
 
   useEffect(() => {
     createBoard()
-  }, [])
-
-  let numRows = 8
-  let numCols = 10
+  }, [ numCols, numRows, difficulty ])
 
   function getMineCells() {
-    let totalMines = 8 // (numRows * numCols) / 6
+
+    let mineRatio = 1;
+    switch (difficulty) {
+      case Difficulty.easy:
+        mineRatio = 0.1;
+        break;
+      case Difficulty.medium:
+        mineRatio = 0.2;
+        break;
+      case Difficulty.hard:
+        mineRatio = 0.3;
+        break;
+      default:
+        break;
+    }
+
+    let totalMines = Math.ceil((numRows * numCols) * mineRatio);
 
     let allCells = (new Array(numRows * numCols)).fill(0).map(
       (_, i) => i
@@ -39,6 +61,9 @@ export function App() {
   }
 
   function createBoard() {
+
+    setIsGameDone(false)
+
     let mineCells = getMineCells()
 
     let newBoard: Array<Array<Cell>> = []
@@ -49,7 +74,8 @@ export function App() {
         let isMine = mineCells.includes(i * numCols + j)
         currRow.push({
           isMine,
-          isRevealed: false
+          isRevealed: false,
+          isFlagged: false
         })
       }
 
@@ -72,7 +98,7 @@ export function App() {
             ) {
               continue
             }
-            
+
             if (newBoard[newI][newJ].isMine) {
               mineCount++
             }
@@ -86,20 +112,109 @@ export function App() {
     setBoard(newBoard)
   }
 
-  function handleCellClick(i: number, j: number) {
+  // Flood fill algorithm
+  function revealRecursive(i: number, j: number, board: Cell[][]) {
+    if (i < 0 || j < 0 || i >= numRows || j >= numCols) return;
+    if (board[i][j].isMine) return;
+    if (board[i][j].isRevealed) return;
+
+    board[i][j].isRevealed = true;
+    if (board[i][j].mineCount != 0) return;
+
+    for (let di = -1; di <= 1; di++) {
+      for (let dj = -1; dj <= 1; dj++) {
+        // Below condition not required
+        // if (di == 0 && dj == 0) continue;
+        revealRecursive(i + di, j + dj, board)
+      }
+    }
+  }
+
+  function isGameWon(board: Cell[][]) {
+    for (let i = 0; i < numRows; i++) {
+      for (let j = 0; j < numCols; j++) {
+        if (board[i][j].isRevealed) continue
+        if (!board[i][j].isMine) return false
+      }
+    }
+    return true
+  }
+
+  function handleCellClick(event: MouseEvent, i: number, j: number) {
+    event.preventDefault();
+
+    if (event.button == 2) {
+      // right click event
+      let newBoard = [...board]
+      newBoard[i][j].isFlagged = !newBoard[i][j].isFlagged
+      setBoard(newBoard)
+      return
+    }
+
+    // left click event
+    if (board[i][j].isFlagged) return
+
+    if (isGameDone) return;
+
     let newBoard = [...board]
+
+    if (newBoard[i][j].isMine) {
+      alert("Game over!")
+
+      // Method 1
+      // for (let i = 0; i < numRows; i++) {
+      //   for (let j = 0; j < numCols; j++) {
+      //     newBoard[i][j].isRevealed = true
+      //   }
+      // }
+
+      setIsGameDone(true);
+    } else {
+      if (newBoard[i][j].mineCount == 0) {
+        revealRecursive(i, j, newBoard)
+      }
+
+    }
+
     newBoard[i][j].isRevealed = true
+
+    let hasWon = isGameWon(newBoard)
+    if (hasWon) {
+      alert("You've won! 🎉")
+      setIsGameDone(true)
+    }
+
     setBoard(newBoard)
   }
 
   function display(cell: Cell) {
-    if (!cell.isRevealed) return "";
+    // if (!cell.isRevealed) return "";
+
+    // method 2: use isGameOver
+    if (!isGameDone && !cell.isRevealed) {
+      if (cell.isFlagged) return "🚩";
+      return "";
+    }
     if (cell.isMine) return "💣";
-    return cell.mineCount || 0;
+    if (cell.mineCount == 0) return ""
+    return cell.mineCount;
+  }
+
+  function getBgColor(cell: Cell) {
+    if (cell.isRevealed || isGameDone) {
+
+      if (cell.isMine) {
+        return "#fe1100"
+      }
+
+      return "#DEB887"
+
+    }
+    return "#0ba"
   }
 
   return (
-    <div id="app">
+    <>
       {
         board.map(
           (row, i) => (
@@ -109,11 +224,21 @@ export function App() {
                   (cell, j) => (
                     <div
                       className="cell"
-                      onClick={
-                        () => handleCellClick(i, j)
+                      style={{
+                        cursor: (cell.isRevealed || isGameDone)
+                          ? "default"
+                          : "pointer",
+
+                        backgroundColor: getBgColor(cell)
+                      }}
+                      onContextMenu={
+                        (event) => handleCellClick(event, i, j)
                       }
-                      >
-                      { display(cell) }
+                      onClick={
+                        (event) => handleCellClick(event, i, j)
+                      }
+                    >
+                      {display(cell)}
                     </div>
                   )
                 )
@@ -122,6 +247,49 @@ export function App() {
           )
         )
       }
+    </>
+  )
+}
+
+enum Difficulty {
+  easy = "easy",
+  medium = "medium",
+  hard = "hard"
+}
+
+export function App() {
+
+  const [rows, setRows] = useState<number>(4)
+  const [cols, setCols] = useState<number>(6)
+
+  const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.easy)
+
+  return (
+    <div id="app">
+      <form class="board-form">
+        <input type="number" value={rows} id="user-rows" onChange={
+          (event) => setRows(parseInt(event.currentTarget.value))
+        } />
+        <label for="user-rows">Rows</label>
+        <input type="number" value={cols} id="user-cols" onChange={
+          (event) => setCols(parseInt(event.currentTarget.value))
+        } />
+        <label for="user-cols">Columns</label>
+
+        <select
+          id="user-difficulty"
+          value={difficulty}
+          onChange={
+            (event) => setDifficulty(event.currentTarget.value as Difficulty)
+          }
+          >
+          <option value="easy" >Easy</option>
+          <option value="medium" >Medium</option>
+          <option value="hard" >Hard</option>
+        </select>
+
+      </form>
+      <MineSweeper numRows={rows} numCols={cols} difficulty={difficulty} />
     </div>
   )
 }
